@@ -1,0 +1,433 @@
+---
+title: "Data Analysis on Amazon Products and Reviews"
+author: "Abhignya, Muaz, Vaishnavi, Vivek"
+date: "09/03/2021"
+output: html_document
+---
+**Amazon is a Global E-Commerce Giant. It is an Internet-based company that sells electronic goods, apparel, movie books and every good that can be sold online on its Platform Amazon.com. Amazon was founded by Jeff Bezos in 1994.**
+
+**In this project we are performing Data Analysis on Amazons data set for product categories like smart phones, bath & shower, Fragrance, detergent & dishwash, etc**
+
+**The data sets that are used for this project is open source and retrieved from the following websites:**
+
+1. Amazon Smart phones and reviews: https://www.kaggle.com/grikomsn/amazon-cell-phones-reviews 
+                                                          
+
+
+### Initializing the libraries
+```
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(plotrix)
+library(lazyeval)
+library(statisticalModeling)
+library(ggthemes)
+library(tidytext)
+library(extrafont)
+library(stopwords)
+
+```
+### Loading Datasets
+```
+data <- read_csv("C:\\Users\\Vaishnavi\\Downloads\\sdf.csv")
+items <- read.csv("C:\\Users\\Vaishnavi\\Downloads\\items.csv")
+reviews <- read.csv("C:\\Users\\Vaishnavi\\Desktop\\SDBI\\Semester-I\\R Programming\\Case studies\\Amazon\\reviews.csv")
+```
+### Data exploration
+```
+glimpse(data)
+glimpse(items)
+glimpse(reviews)
+
+```
+
+
+**To find missing values**
+* **If the value is NA the is.na() function return the value of true, otherwise, return to a value of false.**
+
+```{r,include=TRUE}
+sapply(items, function(x) sum(is.na(x)))
+sapply(reviews, function(x) sum(is.na(x)))
+```
+
+* **Dropping only NA's in items because 4 have not brand names**
+
+```{r,include=TRUE}
+items <- na.omit(items)
+max(items$rating)
+```
+
+
+* **Renaming the columns**
+
+```{r,include=TRUE}
+names(reviews)[names(reviews)== "rating"] <- "reviewer_rating"
+names(reviews)[names(reviews)=="title"] <- "review_title"
+names(items)[names(items)=="rating"] <- "product_rating"
+names(items)[names(items)=="title"] <- "product"
+```
+
+* **Merging dataset**
+
+```{r,include=FALSE}
+amazon <- merge(reviews, items, by = "asin")
+summary(amazon)
+```
+
+```{r,include=TRUE}
+amazon$verified <- as.factor(amazon$verified)
+```
+
+
+* **Data Column into Daymonth and year (2 Columns) years between 2005-2018 **
+```{r,include=FALSE}
+amazon <- amazon %>% separate(date, c("daynmonth","year"), ",")
+amazon %>% select(year) %>% distinct()   
+```
+
+
+### Descriptive Analysis 
+
+**Q.1 Distiribution of Reviews by year **
+
+```{r,include=TRUE}
+fig <- plot_ly(amazon, x=~year,  type = "histogram",
+      marker = list(color = "#def6dc",line = list(color = "#4eb2d2",width = 2))) %>%
+      layout(title = "Distiribution of Reviews by year",
+      yaxis = list(title = "Frequency",zeroline = FALSE),
+      xaxis = list(title = "Year",zeroline = FALSE))
+fig
+```
+
+**Q.2 Distribution of Price**
+
+```{r,include=TRUE}
+amazonp <- amazon %>% filter(price != 0.00)
+
+two <- ggplot(amazonp, aes(x = price)) +
+       geom_density(alpha = 0.9,color="#4eb2d2", fill="#def6dc") +
+       labs(x = "Price" , y = "Density") + 
+       theme_minimal() +
+       theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+       axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.text = element_text(size = 11 , color = "#37475A")) +
+       ggtitle("Distribution of Price")
+fig <- ggplotly(two)
+fig
+```
+
+
+**Q.3 Grouping Price**
+
+```{r,include=TRUE}
+amazonp <- amazonp %>% 
+           mutate(price_group = if_else(between(price, 0, 250), "Low price", 
+           if_else(between(price, 250, 450), "Medium price",
+           if_else(price > 450, "High price","Unknown price"))), 
+           price_group = if_else(is.na(price_group), "Unknown price", price_group)) %>%
+           rownames_to_column(var = "id")
+```
+
+```{r,include=TRUE,warning=FALSE}
+p_group_cl <- amazonp %>% dplyr::filter(!is.na(price_group)) %>% 
+              ggplot(aes(x = price,fill = price_group)) +
+              labs(x = "Price" , y = "Density" , fill = "Price Group") +
+              geom_density(alpha = 0.5) +
+      scale_fill_brewer(palette="BuGn") +
+              theme_minimal() +
+              theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+              axis.title.x = element_text(color = "#37475A", size = 12,face ="bold",family="Arial"),
+              axis.title.y = element_text(color = "#37475A", size = 12,face ="bold",family="Arial"),
+              axis.text = element_text(size = 11 , color = "#37475A")) +
+              geom_density(aes(frame = price_group))  + 
+              labs(title = "Distribution of Price Groups")
+
+fig <- ggplotly(p_group_cl)
+fig
+```
+
+
+**Q.4 Distribution of total reviews by brand**
+
+```{r,include=TRUE}
+fig <- plot_ly(amazon, x=~brand,  type = "histogram",
+       marker = list(color = "#def6dc",line = list(color = "#4eb2d2",width = 2))) %>%
+       layout(title = "Total Reviews by brand",
+       yaxis = list(title = "Frequency",zeroline = FALSE),
+       xaxis = list(title = "Brand",zeroline = FALSE))
+fig
+```
+
+**Q.5 Ratings vs. Number of reviews**
+
+```{r,include=TRUE}
+five <- ggplot(amazon, aes(x=product_rating)) + geom_histogram(binwidth = 0.5,color="#4eb2d2", fill="#def6dc") +         coord_cartesian(xlim = c(.5, 5.5))+
+        labs(title ="Distribution of Product Ratings ",
+        x = "Ratings", y = "Number of Reviews") +
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face ="bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face ="bold",family="Arial"),
+        axis.text = element_text(size = 11 , color = "#37475A")) +
+        labs(title = "Distribution of Price Groups") 
+
+fig <- ggplotly(five)
+fig
+```
+
+
+**Q.6 Ratings fill by brand **
+
+```{r,include=TRUE,warning=FALSE}
+six <- ggplot(amazon, aes(x = product_rating,fill = `brand` )) +
+       geom_histogram (binwidth = 1, col = "#f2f4f7" , stat="bin") +
+       labs(x = "Ratings", y = "Frequency",title = "Distribution of the Product Ratings amongst Brands") +
+       scale_x_continuous(breaks = c(1,2, 3,4, 5)) +
+    scale_fill_brewer(palette="GnBu") +
+       theme_minimal() +
+       theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+       axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.text = element_text(size = 11.5 , color = "#37475A"))
+
+fig <- ggplotly(six)
+fig
+```
+
+
+
+**Q.8 Reviewer Ratings by Brand **
+
+```{r,include=TRUE}
+nine2 <- ggplot(amazon, aes(x=reviewer_rating, group=brand))+
+  geom_bar(aes(fill=factor(..x..)),stat="count")+
+  facet_grid(~brand)+
+  labs(x=NULL,y=NULL,title="Reviewer Ratings by Brand")+
+  ylab(NULL) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.text = element_text(size = 11 , color = "#37475A")) +
+  scale_fill_brewer(name="Reviewer Ratings",palette="GnBu",label=c("1", "2", "3", "4", "5"))
+
+fig <- ggplotly(nine2)
+fig
+
+```
+
+```{r,include=TRUE}
+price <- amazonp %>% 
+         mutate(rating_group = if_else(between(product_rating, 0, 1), "1", 
+         if_else(between(product_rating, 1, 2), "2",
+         if_else(between(product_rating, 2, 3), "3",
+         if_else(between(product_rating, 3, 4), "4",
+         if_else(product_rating > 5, "5","5"))))), 
+         rating_group = if_else(is.na(rating_group), "", rating_group)) %>% 
+         rownames_to_column(var = "idd")
+```
+
+```{r,include=TRUE}
+price <- na.omit(price)
+```
+
+**Q.9 Price and Brand**
+
+```{r,include=TRUE,warning=FALSE}
+tanb <- ggplot(price, aes(product_rating, price, colour=factor(brand)), na.rm=TRUE) +
+        theme_minimal() +
+        labs(x="Product Rating",y="Price")+
+        theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.text = element_text(size = 11 , color = "#37475A")) +
+        geom_point(aes(frame = brand , colour=factor(brand))) +
+        scale_fill_discrete(name="Brand")
+
+fig <- ggplotly(tanb) 
+fig
+```
+
+
+**Q.10 Helpful Votes by Brand**
+```{r,include=TRUE}
+a <- amazon %>% select(brand, helpfulVotes) %>% na.omit() 
+```
+
+```{r,include=TRUE}
+elev <- ggplot(a, aes(factor(brand))) +
+        geom_bar(position = "dodge", color="#4eb2d2", fill="#def6dc") + 
+        ylab("Helpful Votes")+ xlab("Brands") + labs(title = "Helpful Votes by Brand")+
+        theme_minimal() +
+        theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.text.y = element_text(size = 11 , color = "#37475A"),
+        axis.text.x = element_text(size = 11 , color = "#37475A",angle = 90)) 
+
+fig <- ggplotly(elev)
+fig
+```
+
+```{r,include=TRUE}
+data(stop_words)
+stopwords_phone <- c(stopwords("english"),"phone","Samsung","Nokia","Apple","ASUS","OnePlus","Motorola","HUAWEI","Sony","Google","Xiaomi","great","like","good",
+                     "samsung","nokia","iphone","apple","asus","oneplus","motorola","huawei","sony","google","xiaomi", "phones")
+```
+
+
+```{r,include=TRUE}
+amazon_clean<- amazon %>% select(brand,body) %>% unnest_tokens(input=body,output=word) %>% 
+               count(brand,word,sort=T) %>% filter(nchar(word)>3) %>%
+               filter(!word %in% stopwords_phone) %>%
+               group_by(brand)
+```
+
+```{r,include=TRUE}
+amazon_clean2 <- amazon_clean %>% anti_join(stop_words)
+```
+
+**Q.11 Most common words by brand**
+```{r,include=TRUE,warning=FALSE}
+twl <- amazon_clean2 %>% top_n(n=6,n)%>% mutate(word = reorder(word, n)) %>% 
+       ggplot(aes(x=word, y=n,fill=brand)) + 
+       geom_col(show.legend=F,col="black")+
+       facet_wrap(~brand, ncol=2,scales="free")+
+       xlab(NULL)+ ylab("Count")+
+       ggtitle("Most Common Words in Reviews by Brand") +
+       scale_fill_brewer(palette="GnBu") +
+       theme_minimal() +
+       theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+       axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.text = element_text(size = 11 , color = "#37475A")) + coord_flip()
+
+fig <- ggplotly(twl)
+fig
+```
+
+
+```{r,include=TRUE}
+amazon_clean_rank<- amazon %>% select(reviewer_rating,body) %>%  unnest_tokens(input=body,output=word) %>%
+                    count(reviewer_rating,word,sort=T) %>% 
+                    filter(nchar(word)>3) %>%
+                    filter(!word %in% stopwords_phone) %>%
+                    group_by(reviewer_rating)
+```
+
+
+```{r,include=TRUE,warning=FALSE}
+amazon_clean_rank2 <- amazon_clean_rank %>% anti_join(stop_words)
+```
+
+**Q.12 Most common words all reviews**
+```{r,include=TRUE}
+fif <- amazon_clean_rank2 %>% top_n(n=7,n)%>% mutate(word = reorder(word, n)) %>% 
+       ggplot(aes(x=word, y=n,fill=reviewer_rating)) + 
+       geom_col(show.legend=F,col="white")+
+       facet_wrap(~reviewer_rating, ncol=2,scales="free")+
+       xlab(NULL) + ylab("Count")+ 
+       ggtitle("Most Common Words in Reviews by Rating") +
+       theme_minimal() +
+       theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+       axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+       axis.text = element_text(size = 11 , color = "#37475A")) + coord_flip()
+
+fig <- ggplotly(fif)
+fig
+```
+
+
+### Samsung Vs. Apple
+
+```{r,include=TRUE}
+samsung <- amazon %>% filter(brand == "Samsung")
+
+samsung2 <- amazon %>% filter(year >= 2017)
+
+samsung_apple <- amazon %>% filter(brand == "Samsung"  | brand== "Apple")
+
+samsung_apple %>% filter(year >= 2017)
+
+samsung_apple %>% select(brand) %>% distinct()
+```
+
+
+```{r,include=TRUE}
+samsung_apple<- samsung_apple %>% 
+  mutate(price_group = if_else(between(price, 0, 250), "Low price", 
+  if_else(between(price, 250, 450), "Medium price",
+  if_else(price > 450, "High price","Unknown price"))), 
+  price_group = if_else(is.na(price_group), "Unknown price", price_group)) %>% 
+  rownames_to_column(var = "id")
+```
+
+**Product Rating**
+```{r,include=TRUE,warning=FALSE}
+sa <- ggplot(samsung_apple,aes(x=reviewer_rating,group=brand))+
+  geom_bar(aes(fill=factor(..x..)),stat="count")+
+  facet_grid(~brand)+
+  labs(x=NULL,y=NULL,title="Apple vs. Samsung ")+
+  scale_fill_brewer(palette="GnBu",name="Rating") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.text = element_text(size = 11 , color = "#37475A")) 
+fig <- ggplotly(sa)
+fig
+```
+
+**Distribution of Price Groups**
+```{r,include=TRUE,warning=FALSE}
+s_a <- ggplot(samsung_apple,aes(x=price_group,group=brand))+
+  geom_bar(aes(fill=factor(..x..)),stat="count")+
+  facet_grid(~brand)+
+  labs(title="Apple vs. Samsung",x=NULL,y=NULL)+
+  scale_fill_brewer(name="Price Group",palette="GnBu") +
+theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial",margin = margin(r = 50)),
+        axis.text = element_text(size = 11 , color = "#37475A")) 
+fig <- ggplotly(s_a)
+fig
+```
+
+```{r,include=TRUE,warning=FALSE}
+samsung_apple_clear<- samsung_apple %>% 
+  select(brand,body) %>% 
+  unnest_tokens(input=body,output=word) %>%
+  count(brand,word,sort=T) %>% 
+  filter(nchar(word)>3) %>%
+  filter(!word %in% stopwords_phone) %>%
+  group_by(brand)
+```
+
+```{r,include=TRUE,warning=FALSE}
+samsung_apple_clear2 <- samsung_apple_clear %>% 
+  anti_join(stop_words) 
+```
+
+**Q.Most Common Words in Reviews by Brand **
+```{r,include=TRUE}
+sam_app <- samsung_apple_clear2 %>%
+  top_n(n=10,n)%>%
+  mutate(word = reorder(word, n)) %>% 
+  ggplot(aes(x=word, y=n,fill=brand)) + geom_col(show.legend=F,col="white")+ facet_wrap(~brand, ncol=2,scales="free")+
+  xlab(NULL) + ylab(NULL)+ ggtitle("Most Common Words in Reviews by Brand") + coord_flip() +
+  scale_fill_brewer(palette="GnBu") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5 , color = "#37475A"),
+        axis.title.x = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.title.y = element_text(color = "#37475A", size = 12,face = "bold",family="Arial"),
+        axis.text = element_text(size = 11 , color = "#37475A")) 
+fig <- ggplotly(sam_app)
+fig
+
+
